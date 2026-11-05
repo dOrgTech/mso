@@ -182,6 +182,25 @@ impl Retention {
     }
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PushAsset {
+    pub symbol: String,
+    pub token: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Pusher {
+    pub contract: String,
+    pub eth_symbol: String,
+    pub assets: Vec<PushAsset>,
+    pub tick_secs: u64,
+    pub deviation_bps: u64,
+    pub heartbeat_secs: u64,
+    pub low_balance_wei: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -189,6 +208,8 @@ pub struct Config {
     pub retention: Retention,
     pub feeds: Feeds,
     pub assets: Vec<Asset>,
+    #[serde(default)]
+    pub pusher: Option<Pusher>,
 }
 
 impl Config {
@@ -311,6 +332,37 @@ impl Config {
                     }
                     _ => {}
                 }
+            }
+        }
+        if let Some(p) = &mut self.pusher {
+            p.contract = normalize_eth_address(&p.contract)
+                .map_err(|e| format!("pusher contract: {}", e))?;
+            p.eth_symbol = p.eth_symbol.trim().to_uppercase();
+            if !self.assets.iter().any(|a| a.symbol == p.eth_symbol) {
+                return Err(format!("pusher eth_symbol '{}' not found in assets", p.eth_symbol));
+            }
+            if p.assets.is_empty() {
+                return Err("pusher assets list cannot be empty".into());
+            }
+            for a in &mut p.assets {
+                a.symbol = a.symbol.trim().to_uppercase();
+                a.token = normalize_eth_address(&a.token)
+                    .map_err(|e| format!("pusher asset '{}': {}", a.symbol, e))?;
+                if !self.assets.iter().any(|cfg_a| cfg_a.symbol == a.symbol) {
+                    return Err(format!("pusher asset '{}' not found in assets", a.symbol));
+                }
+            }
+            if p.tick_secs == 0 {
+                return Err("pusher tick_secs must be > 0".into());
+            }
+            if p.heartbeat_secs == 0 {
+                return Err("pusher heartbeat_secs must be > 0".into());
+            }
+            if p.deviation_bps > 10_000 {
+                return Err("pusher deviation_bps must be <= 10000".into());
+            }
+            if p.low_balance_wei.trim().parse::<alloy::primitives::U256>().is_err() {
+                return Err("pusher low_balance_wei must be a valid unsigned integer".into());
             }
         }
         Ok(())

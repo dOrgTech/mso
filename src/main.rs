@@ -4,6 +4,7 @@ mod auth;
 mod config;
 mod db;
 mod feed;
+mod pusher;
 mod rollup;
 mod server;
 
