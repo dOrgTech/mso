@@ -11,6 +11,7 @@ hyperliquid = 60
 jupiter = 60
 yahoo = 60
 uniswap = 60
+fixed = 60
 
 [retention]
 ticks_hours = 24
@@ -32,12 +33,13 @@ candles_1h_days = 90
 twap = "warm"
 
 # One entry per served symbol.
-#   source: binance-ws | binance | hyperliquid | jupiter | yahoo | uniswap
+#   source: binance-ws | binance | hyperliquid | jupiter | yahoo | uniswap | fixed
 #   id:     identifier at that source:
 #           binance pair (SOLUSDT), hyperliquid coin (HYPE),
 #           Solana mint (jupiter), ticker (yahoo),
 #           V3 pool contract address (uniswap) - the price is token0 quoted
-#           in token1, so pick a pool whose token order matches the symbol.
+#           in token1, so pick a pool whose token order matches the symbol,
+#           fixed decimal price string (e.g. "1").
 #   fallback (optional): another source + id used only while the primary
 #           price is older than max(2 x primary resolution, 5s).
 #           Hyperliquid fallbacks are perp mid prices (small basis vs spot).
@@ -118,3 +120,9 @@ fallback = { source = "yahoo", id = "TSLA" }
 # id = "0x11b815efB8f581194ae79006d24E0d814B7697F6"
 # twap = "hot"                              # optional override (uniswap is the primary here)
 # fallback = { source = "binance", id = "ETHUSDT" }
+
+# [[assets]]
+# symbol = "USDT/USD"
+# source = "fixed"
+# id = "1"
+

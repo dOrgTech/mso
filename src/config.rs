@@ -24,16 +24,18 @@ pub enum Source {
     Jupiter,
     Yahoo,
     Uniswap,
+    Fixed,
 }
 
 impl Source {
-    pub const ALL: [Source; 6] = [
+    pub const ALL: [Source; 7] = [
         Source::BinanceWs,
         Source::Binance,
         Source::Hyperliquid,
         Source::Jupiter,
         Source::Yahoo,
         Source::Uniswap,
+        Source::Fixed,
     ];
 
     pub fn label(self) -> &'static str {
@@ -44,6 +46,7 @@ impl Source {
             Source::Jupiter => "jupiter",
             Source::Yahoo => "yahoo",
             Source::Uniswap => "uniswap",
+            Source::Fixed => "fixed",
         }
     }
 }
@@ -142,6 +145,7 @@ pub struct PollSecs {
     pub jupiter: u64,
     pub yahoo: u64,
     pub uniswap: u64,
+    pub fixed: u64,
 }
 
 /// Source-specific settings that don't fit the generic asset/poll model.
@@ -213,7 +217,7 @@ impl Config {
             return Err("at least one [[assets]] entry is required".into());
         }
         let p = &self.poll_secs;
-        if [p.binance, p.hyperliquid, p.jupiter, p.yahoo, p.uniswap].contains(&0) {
+        if [p.binance, p.hyperliquid, p.jupiter, p.yahoo, p.uniswap, p.fixed].contains(&0) {
             return Err("poll_secs values must be >= 1".into());
         }
         self.feeds.uniswap.twap.validate().map_err(|e| format!("feeds.uniswap: {}", e))?;
@@ -230,6 +234,20 @@ impl Config {
             }
             if !seen.insert(a.symbol.clone()) {
                 return Err(format!("duplicate asset symbol '{}'", a.symbol));
+            }
+            if a.source == Source::Fixed {
+                match a.id.parse::<f64>() {
+                    Ok(val) if val.is_finite() && val > 0.0 => {}
+                    _ => return Err(format!("fixed asset '{}': id must be a finite number > 0", a.symbol)),
+                }
+            }
+            if let Some(f) = &a.fallback {
+                if f.source == Source::Fixed {
+                    match f.id.parse::<f64>() {
+                        Ok(val) if val.is_finite() && val > 0.0 => {}
+                        _ => return Err(format!("fixed asset '{}' fallback: id must be a finite number > 0", a.symbol)),
+                    }
+                }
             }
             // Binance reports pairs uppercase; other sources' ids are case-sensitive.
             if matches!(a.source, Source::Binance | Source::BinanceWs) {
@@ -320,6 +338,7 @@ impl Config {
             Source::Jupiter => self.poll_secs.jupiter,
             Source::Yahoo => self.poll_secs.yahoo,
             Source::Uniswap => self.poll_secs.uniswap,
+            Source::Fixed => self.poll_secs.fixed,
         })
     }
 
@@ -741,5 +760,30 @@ mod tests {
         for a in &cfg.assets {
             assert!(a.fallback.is_some());
         }
+    }
+
+    #[test]
+    fn fixed_source_parses_and_labels() {
+        let toml = "[[assets]]\nsymbol = 'USDT/USD'\nsource = 'fixed'\nid = '1'\n";
+        let cfg = Config::parse(toml).unwrap();
+        assert_eq!(cfg.assets[0].source, Source::Fixed);
+        assert_eq!(Source::Fixed.label(), "fixed");
+    }
+
+    #[test]
+    fn fixed_source_rejects_bad_id() {
+        for bad in &["abc", "0", "-1", "inf", "NaN"] {
+            let toml = format!("[[assets]]\nsymbol = 'USDT/USD'\nsource = 'fixed'\nid = '{}'\n", bad);
+            assert!(Config::parse(&toml).is_err(), "should reject id: {}", bad);
+        }
+    }
+
+    #[test]
+    fn sepolia_config_loads() {
+        let text = include_str!("../config/sepolia.toml");
+        let cfg = Config::parse(text).unwrap();
+        assert_eq!(cfg.assets.len(), 4);
+        assert!(cfg.assets.iter().any(|a| a.symbol == "LINK/USD"));
+        assert!(cfg.assets.iter().any(|a| a.symbol == "USDT/USD"));
     }
 }
