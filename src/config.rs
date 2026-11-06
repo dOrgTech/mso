@@ -837,5 +837,6 @@ mod tests {
         assert_eq!(cfg.assets.len(), 4);
         assert!(cfg.assets.iter().any(|a| a.symbol == "LINK/USD"));
         assert!(cfg.assets.iter().any(|a| a.symbol == "USDT/USD"));
+        assert!(cfg.pusher.is_some());
     }
 }

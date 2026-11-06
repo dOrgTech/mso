@@ -160,6 +160,37 @@ To smoke-test the feed against mainnet (queries WETH/USDT on every preset):
 MSO_ETH_RPC_URL=https://... cargo test live_uniswap -- --ignored --nocapture
 ```
 
+### On-Chain Price Pusher (Sepolia / Staging Oracle)
+
+MSO can run as an on-chain price cranker pushing asset prices (quoted in ETH with 18 decimals)
+to a `StagingMockOracle` contract.
+
+```toml
+[pusher]
+contract = "0x..."            # StagingMockOracle contract address
+eth_symbol = "ETH/USD"         # Base currency used for converting USD prices to ETH
+tick_secs = 10                 # Check frequency
+deviation_bps = 50             # Deviation threshold (50 bps = 0.5%)
+heartbeat_secs = 300           # Heartbeat elapsed time before forcing a push
+low_balance_wei = "50000000000000000" # 0.05 ETH alert threshold
+assets = [
+  { symbol = "BTC/USD",  token = "0x29f2D40B0605204364af54EC677bD022dA425d03" },
+  { symbol = "LINK/USD", token = "0xf8Fb3713D459D7C1018BD0A49D19b4C44290EBE5" },
+  { symbol = "USDT/USD", token = "0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0" },
+]
+```
+
+Required environment variables when `[pusher]` is configured:
+- `MSO_PUSHER_RPC_URL`: JSON-RPC URL for the target network (e.g. Sepolia).
+- `MSO_PUSHER_PRIVATE_KEY`: Private key of the cranker account with permissions to call `setAssetPrices`.
+
+**Behaviour:**
+1. Each tick (`tick_secs`), MSO queries the oracle contract for each configured asset to determine if manual test mode is enabled (`testModeEnabled`), the latest price (`manualPrices`), and last update timestamp (`updatedAt`).
+2. MSO checks whether its internal feed price or ETH price is stale (older than fallback threshold). Stale or disabled assets are skipped.
+3. Assets are pushed in a single batch `setAssetPrices` transaction if the price deviation exceeds `deviation_bps` or `heartbeat_secs` have elapsed since `updatedAt`.
+4. Only one transaction is in flight at a time with a 120s confirmation timeout.
+5. Emits `ERROR` logs if a transaction reverts, times out, the cranker balance drops below `low_balance_wei`, or if no push succeeds within `heartbeat_secs` while assets are active.
+
 ---
 
 ## API Key Management
