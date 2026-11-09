@@ -32,6 +32,7 @@ FROM gcr.io/distroless/cc-debian12:nonroot AS runner
 # Copy stripped binary and data volume directory
 COPY --from=builder /app/target/release/mso /usr/local/bin/mso
 COPY --from=builder --chown=65532:65532 /data /data
+COPY config /config
 
 # Run as nonroot user (UID 65532)
 USER 65532:65532

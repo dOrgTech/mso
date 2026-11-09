@@ -1,0 +1,44 @@
+# mso configuration for Sepolia Oracle Price Cranker
+# Start with `mso serve --config config/sepolia.toml`
+
+[poll_secs]
+binance = 5
+hyperliquid = 5
+fixed = 60
+
+[[assets]]
+symbol = "ETH/USD"
+source = "binance"
+id = "ETHUSDT"
+fallback = { source = "hyperliquid", id = "ETH" }
+
+[[assets]]
+symbol = "BTC/USD"
+source = "binance"
+id = "BTCUSDT"
+fallback = { source = "hyperliquid", id = "BTC" }
+
+[[assets]]
+symbol = "LINK/USD"
+source = "binance"
+id = "LINKUSDT"
+fallback = { source = "hyperliquid", id = "LINK" }
+
+[[assets]]
+symbol = "USDT/USD"
+source = "fixed"
+id = "1"
+
+[pusher]
+contract = "0x0000000000000000000000000000000000000001"
+eth_symbol = "ETH/USD"
+tick_secs = 10
+deviation_bps = 50
+heartbeat_secs = 300
+low_balance_wei = "50000000000000000"   # 0.05 ETH
+assets = [
+  { symbol = "BTC/USD",  token = "0x29f2D40B0605204364af54EC677bD022dA425d03" },
+  { symbol = "LINK/USD", token = "0xf8Fb3713D459D7C1018BD0A49D19b4C44290EBE5" },
+  { symbol = "USDT/USD", token = "0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0" },
+]
+

@@ -104,10 +104,10 @@ impl FeedCoordinator {
     }
 
     /// No price yet, or older than the symbol's fallback threshold.
-    fn is_stale(&self, symbol: &str, now: i64) -> bool {
+    pub(crate) fn is_stale(&self, symbol: &str, now: i64) -> bool {
         self.l1_cache
             .get(symbol)
-            .map_or(true, |e| now - e.timestamp > config::fallback_after_ms(symbol) as i64)
+            .is_none_or(|e| now - e.timestamp > config::fallback_after_ms(symbol) as i64)
     }
 
     /// Ids worth fetching from `source` right now: every primary id, plus
@@ -195,6 +195,13 @@ async fn poll(coord: FeedCoordinator, source: Source, every: Duration) {
                     ids.iter().map(|id| (id.clone(), cfg.twap_window(id).secs())).collect();
                 uni.as_ref().expect("built above for uniswap").fetch_twaps(&pools).await
             }
+            Source::Fixed => {
+                let prices: Vec<(String, f64)> = ids
+                    .iter()
+                    .filter_map(|id| id.parse::<f64>().ok().map(|p| (id.clone(), p)))
+                    .collect();
+                Ok(prices)
+            }
             Source::BinanceWs => unreachable!("binance-ws is streamed, not polled"),
         };
         match res {
@@ -239,6 +246,19 @@ mod tests {
         feed.ingest(Source::Binance, "DOGEUSDT", 0.1, now);
         feed.ingest(Source::Binance, "BTCUSDT", f64::NAN, now);
         assert!(feed.l1_cache.get("BTC/USD").is_none());
+    }
+
+    #[tokio::test]
+    async fn fixed_feed_parses_constant_prices() {
+        let ids = vec!["1".to_string(), "0.5".to_string(), "invalid".to_string()];
+        let prices: Vec<(String, f64)> = ids
+            .iter()
+            .filter_map(|id| id.parse::<f64>().ok().map(|p| (id.clone(), p)))
+            .collect();
+        assert_eq!(
+            prices,
+            vec![("1".to_string(), 1.0), ("0.5".to_string(), 0.5)]
+        );
     }
 
     #[tokio::test]

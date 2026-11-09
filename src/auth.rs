@@ -52,7 +52,7 @@ impl AuthManager {
     pub fn reload_cache(&self) -> Result<(), AuthError> {
         let keys = self
             .db
-            .with_conn(|conn| queries::list_all_keys(conn))
+            .with_conn(queries::list_all_keys)
             .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
 
         self.cache.clear();
@@ -104,7 +104,7 @@ impl AuthManager {
     ) -> Result<(String, String), AuthError> {
         let active_count = self
             .db
-            .with_conn(|conn| queries::count_active_keys(conn))
+            .with_conn(queries::count_active_keys)
             .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
 
         if active_count >= MAX_ACTIVE_KEYS {
@@ -155,7 +155,7 @@ impl AuthManager {
 
     pub fn list_keys(&self) -> Result<Vec<ApiKeyRecord>, AuthError> {
         self.db
-            .with_conn(|conn| queries::list_all_keys(conn))
+            .with_conn(queries::list_all_keys)
             .map_err(|e| AuthError::DatabaseError(e.to_string()))
     }
 }

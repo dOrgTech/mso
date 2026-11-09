@@ -24,16 +24,18 @@ pub enum Source {
     Jupiter,
     Yahoo,
     Uniswap,
+    Fixed,
 }
 
 impl Source {
-    pub const ALL: [Source; 6] = [
+    pub const ALL: [Source; 7] = [
         Source::BinanceWs,
         Source::Binance,
         Source::Hyperliquid,
         Source::Jupiter,
         Source::Yahoo,
         Source::Uniswap,
+        Source::Fixed,
     ];
 
     pub fn label(self) -> &'static str {
@@ -44,6 +46,7 @@ impl Source {
             Source::Jupiter => "jupiter",
             Source::Yahoo => "yahoo",
             Source::Uniswap => "uniswap",
+            Source::Fixed => "fixed",
         }
     }
 }
@@ -142,6 +145,7 @@ pub struct PollSecs {
     pub jupiter: u64,
     pub yahoo: u64,
     pub uniswap: u64,
+    pub fixed: u64,
 }
 
 /// Source-specific settings that don't fit the generic asset/poll model.
@@ -178,6 +182,25 @@ impl Retention {
     }
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PushAsset {
+    pub symbol: String,
+    pub token: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Pusher {
+    pub contract: String,
+    pub eth_symbol: String,
+    pub assets: Vec<PushAsset>,
+    pub tick_secs: u64,
+    pub deviation_bps: u64,
+    pub heartbeat_secs: u64,
+    pub low_balance_wei: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -185,6 +208,8 @@ pub struct Config {
     pub retention: Retention,
     pub feeds: Feeds,
     pub assets: Vec<Asset>,
+    #[serde(default)]
+    pub pusher: Option<Pusher>,
 }
 
 impl Config {
@@ -213,7 +238,7 @@ impl Config {
             return Err("at least one [[assets]] entry is required".into());
         }
         let p = &self.poll_secs;
-        if [p.binance, p.hyperliquid, p.jupiter, p.yahoo, p.uniswap].contains(&0) {
+        if [p.binance, p.hyperliquid, p.jupiter, p.yahoo, p.uniswap, p.fixed].contains(&0) {
             return Err("poll_secs values must be >= 1".into());
         }
         self.feeds.uniswap.twap.validate().map_err(|e| format!("feeds.uniswap: {}", e))?;
@@ -230,6 +255,20 @@ impl Config {
             }
             if !seen.insert(a.symbol.clone()) {
                 return Err(format!("duplicate asset symbol '{}'", a.symbol));
+            }
+            if a.source == Source::Fixed {
+                match a.id.parse::<f64>() {
+                    Ok(val) if val.is_finite() && val > 0.0 => {}
+                    _ => return Err(format!("fixed asset '{}': id must be a finite number > 0", a.symbol)),
+                }
+            }
+            if let Some(f) = &a.fallback {
+                if f.source == Source::Fixed {
+                    match f.id.parse::<f64>() {
+                        Ok(val) if val.is_finite() && val > 0.0 => {}
+                        _ => return Err(format!("fixed asset '{}' fallback: id must be a finite number > 0", a.symbol)),
+                    }
+                }
             }
             // Binance reports pairs uppercase; other sources' ids are case-sensitive.
             if matches!(a.source, Source::Binance | Source::BinanceWs) {
@@ -295,6 +334,37 @@ impl Config {
                 }
             }
         }
+        if let Some(p) = &mut self.pusher {
+            p.contract = normalize_eth_address(&p.contract)
+                .map_err(|e| format!("pusher contract: {}", e))?;
+            p.eth_symbol = p.eth_symbol.trim().to_uppercase();
+            if !self.assets.iter().any(|a| a.symbol == p.eth_symbol) {
+                return Err(format!("pusher eth_symbol '{}' not found in assets", p.eth_symbol));
+            }
+            if p.assets.is_empty() {
+                return Err("pusher assets list cannot be empty".into());
+            }
+            for a in &mut p.assets {
+                a.symbol = a.symbol.trim().to_uppercase();
+                a.token = normalize_eth_address(&a.token)
+                    .map_err(|e| format!("pusher asset '{}': {}", a.symbol, e))?;
+                if !self.assets.iter().any(|cfg_a| cfg_a.symbol == a.symbol) {
+                    return Err(format!("pusher asset '{}' not found in assets", a.symbol));
+                }
+            }
+            if p.tick_secs == 0 {
+                return Err("pusher tick_secs must be > 0".into());
+            }
+            if p.heartbeat_secs == 0 {
+                return Err("pusher heartbeat_secs must be > 0".into());
+            }
+            if p.deviation_bps > 10_000 {
+                return Err("pusher deviation_bps must be <= 10000".into());
+            }
+            if p.low_balance_wei.trim().parse::<alloy::primitives::U256>().is_err() {
+                return Err("pusher low_balance_wei must be a valid unsigned integer".into());
+            }
+        }
         Ok(())
     }
 
@@ -320,6 +390,7 @@ impl Config {
             Source::Jupiter => self.poll_secs.jupiter,
             Source::Yahoo => self.poll_secs.yahoo,
             Source::Uniswap => self.poll_secs.uniswap,
+            Source::Fixed => self.poll_secs.fixed,
         })
     }
 
@@ -741,5 +812,31 @@ mod tests {
         for a in &cfg.assets {
             assert!(a.fallback.is_some());
         }
+    }
+
+    #[test]
+    fn fixed_source_parses_and_labels() {
+        let toml = "[[assets]]\nsymbol = 'USDT/USD'\nsource = 'fixed'\nid = '1'\n";
+        let cfg = Config::parse(toml).unwrap();
+        assert_eq!(cfg.assets[0].source, Source::Fixed);
+        assert_eq!(Source::Fixed.label(), "fixed");
+    }
+
+    #[test]
+    fn fixed_source_rejects_bad_id() {
+        for bad in &["abc", "0", "-1", "inf", "NaN"] {
+            let toml = format!("[[assets]]\nsymbol = 'USDT/USD'\nsource = 'fixed'\nid = '{}'\n", bad);
+            assert!(Config::parse(&toml).is_err(), "should reject id: {}", bad);
+        }
+    }
+
+    #[test]
+    fn sepolia_config_loads() {
+        let text = include_str!("../config/sepolia.toml");
+        let cfg = Config::parse(text).unwrap();
+        assert_eq!(cfg.assets.len(), 4);
+        assert!(cfg.assets.iter().any(|a| a.symbol == "LINK/USD"));
+        assert!(cfg.assets.iter().any(|a| a.symbol == "USDT/USD"));
+        assert!(cfg.pusher.is_some());
     }
 }

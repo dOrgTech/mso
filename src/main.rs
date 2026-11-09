@@ -1,7 +1,10 @@
+#![allow(clippy::result_large_err)]
+
 mod auth;
 mod config;
 mod db;
 mod feed;
+mod pusher;
 mod rollup;
 mod server;
 
@@ -136,6 +139,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 }
             }
 
+            // Pusher needs an RPC endpoint and a private key; refuse to start half-configured.
+            if let Some(pusher_cfg) = &config::get().pusher {
+                if std::env::var("MSO_PUSHER_RPC_URL").is_err() {
+                    return Err(
+                        "MSO_PUSHER_RPC_URL environment variable must be set when [pusher] is configured"
+                            .into(),
+                    );
+                }
+                if std::env::var("MSO_PUSHER_PRIVATE_KEY").is_err() {
+                    return Err(
+                        "MSO_PUSHER_PRIVATE_KEY environment variable must be set when [pusher] is configured"
+                            .into(),
+                    );
+                }
+                info!("On-chain pusher configured for contract {}", pusher_cfg.contract);
+            }
+
             let db_mgr = DbManager::new(&db)?;
             let auth_mgr = AuthManager::new(db_mgr.clone())?;
 
@@ -159,6 +179,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
             // Start Ingestion Feeds
             feed_coord.start_all();
+
+            // Start On-Chain Price Pusher
+            if let Some(pusher_cfg) = config::get().pusher.as_ref() {
+                let coord = feed_coord.clone();
+                tokio::spawn(pusher::chain::run(coord, pusher_cfg));
+            }
 
             // Start Continuous Downsampling Worker
             start_downsampler(db_mgr);
