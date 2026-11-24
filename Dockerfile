@@ -49,7 +49,8 @@ ENV MSO_HTTP_ADDR=0.0.0.0:4000 \
 # Expose REST Gateway / Scalar Interactive API Docs (4000) and gRPC Server (50051)
 EXPOSE 4000 50051
 
-VOLUME ["/data"]
+# No VOLUME directive: some hosts (e.g. Railway) reject it. Mount persistent
+# storage at /data from the platform (docker run -v ..., Railway volume).
 
 # Native in-binary health check (no curl or shell required)
 HEALTHCHECK --interval=15s --timeout=3s --start-period=5s --retries=3 \
