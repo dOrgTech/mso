@@ -1,28 +1,35 @@
 # mso configuration for Sepolia Oracle Price Cranker
 # Start with `mso serve --config config/sepolia.toml`
+#
+# Binance spot is primary; Ethereum mainnet Uniswap V3 TWAP is the fallback.
+# Uniswap legs need MSO_ETH_RPC_URL (mainnet JSON-RPC, HTTPS) in the environment.
+# Each pool has the asset as token0 and a USD stablecoin as token1.
 
 [poll_secs]
 binance = 5
-hyperliquid = 5
+uniswap = 30
 fixed = 60
+
+[feeds.uniswap]
+twap = "warm"   # 10m window
 
 [[assets]]
 symbol = "ETH/USD"
 source = "binance"
 id = "ETHUSDT"
-fallback = { source = "hyperliquid", id = "ETH" }
+fallback = { source = "uniswap", id = "0x4e68Ccd3E89f51C3074ca5072bbAC773960dFa36" } # WETH/USDT 0.3%
 
 [[assets]]
 symbol = "BTC/USD"
 source = "binance"
 id = "BTCUSDT"
-fallback = { source = "hyperliquid", id = "BTC" }
+fallback = { source = "uniswap", id = "0x9Db9e0e53058C89e5B94e29621a205198648425B" } # WBTC/USDT 0.3%
 
 [[assets]]
 symbol = "LINK/USD"
 source = "binance"
 id = "LINKUSDT"
-fallback = { source = "hyperliquid", id = "LINK" }
+fallback = { source = "uniswap", id = "0xFAD57d2039C21811C8F2B5D5B65308aa99D31559" } # LINK/USDC 0.3%
 
 [[assets]]
 symbol = "USDT/USD"
@@ -30,7 +37,7 @@ source = "fixed"
 id = "1"
 
 [pusher]
-contract = "0x0000000000000000000000000000000000000001"
+contract = "0x5003683689B76a40b2EF1f373dbbFdbA34750306" # StagingMockOracle (inner mock) on Sepolia
 eth_symbol = "ETH/USD"
 tick_secs = 10
 deviation_bps = 50
@@ -41,4 +48,3 @@ assets = [
   { symbol = "LINK/USD", token = "0xf8Fb3713D459D7C1018BD0A49D19b4C44290EBE5" },
   { symbol = "USDT/USD", token = "0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0" },
 ]
-
